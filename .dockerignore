@@ -1,11 +1,11 @@
 node_modules
-src
+dist
 data
 charts
 *.py
 report.html
 .DS_Store
 .env
-*.ts
-!dist/**
-tsconfig.json
+.git
+.gitignore
+run-auth.ts
