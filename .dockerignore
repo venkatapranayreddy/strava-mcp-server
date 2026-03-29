@@ -1,0 +1,11 @@
+node_modules
+src
+data
+charts
+*.py
+report.html
+.DS_Store
+.env
+*.ts
+!dist/**
+tsconfig.json
