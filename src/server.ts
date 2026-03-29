@@ -16,7 +16,7 @@ import type { Request, Response } from 'express';
 // ── Configuration ──────────────────────────────────────────────
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID;
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET;
 
@@ -184,8 +184,8 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // ── Start ──────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`Strava MCP HTTP Server listening on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Strava MCP HTTP Server listening on 0.0.0.0:${PORT}`);
   console.log(`Base URL: ${BASE_URL}`);
   console.log(`MCP endpoint: ${BASE_URL}/mcp`);
   console.log(`OAuth callback: ${BASE_URL}/oauth/strava-callback`);
