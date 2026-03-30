@@ -2,31 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { StravaClient } from '../strava-client.js';
 import type { StravaActivity, StravaStream } from '../types.js';
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function formatDistance(meters: number): string {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
-  return `${Math.round(meters)} m`;
-}
-
-function formatPace(metersPerSecond: number, type: string): string {
-  if (metersPerSecond === 0) return 'N/A';
-  if (type === 'Run' || type === 'Walk' || type === 'Hike') {
-    const minPerKm = 1000 / metersPerSecond / 60;
-    const mins = Math.floor(minPerKm);
-    const secs = Math.round((minPerKm - mins) * 60);
-    return `${mins}:${secs.toString().padStart(2, '0')} /km`;
-  }
-  return `${(metersPerSecond * 3.6).toFixed(1)} km/h`;
-}
+import { formatDuration, formatDistance, formatPace } from './format.js';
 
 function formatActivityRow(a: StravaActivity): string {
   const date = new Date(a.start_date_local).toLocaleDateString();
@@ -48,7 +24,6 @@ function summarizeStream(stream: StravaStream): string {
 
   let summary = `${stream.type}: min=${min.toFixed(1)}, max=${max.toFixed(1)}, avg=${avg.toFixed(1)} (${data.length} points)`;
 
-  // Sample ~100 evenly spaced points
   if (data.length > 100) {
     const step = Math.floor(data.length / 100);
     const sampled = data.filter((_, i) => i % step === 0).slice(0, 100);
@@ -146,7 +121,6 @@ export function registerActivityTools(server: McpServer, client: StravaClient) {
           `Kudos: ${a.kudos_count} | Comments: ${a.comment_count} | Achievements: ${a.achievement_count}`,
         ];
 
-        // Best efforts
         if (a.best_efforts && a.best_efforts.length > 0) {
           lines.push('\n### Best Efforts');
           for (const e of a.best_efforts) {
@@ -155,7 +129,6 @@ export function registerActivityTools(server: McpServer, client: StravaClient) {
           }
         }
 
-        // Splits
         if (a.splits_metric && a.splits_metric.length > 0) {
           lines.push('\n### Splits (per km)');
           lines.push('| KM | Time | Pace | HR | Elev |');
@@ -167,7 +140,6 @@ export function registerActivityTools(server: McpServer, client: StravaClient) {
           }
         }
 
-        // Segment efforts (top 10)
         if (a.segment_efforts && a.segment_efforts.length > 0) {
           lines.push(`\n### Segment Efforts (${a.segment_efforts.length} total)`);
           const top = a.segment_efforts.slice(0, 10);

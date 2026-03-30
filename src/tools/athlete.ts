@@ -1,22 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { StravaClient } from '../strava-client.js';
-import { loadTokens } from '../config.js';
 import type { StravaTotals } from '../types.js';
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function formatDistance(meters: number): string {
-  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
-  return `${Math.round(meters)} m`;
-}
+import { formatDuration, formatDistance } from './format.js';
 
 function formatTotals(label: string, totals: StravaTotals): string {
   if (totals.count === 0) return `${label}: No activities`;
@@ -66,13 +52,8 @@ export function registerAthleteTools(server: McpServer, client: StravaClient) {
       try {
         let athleteId = athlete_id;
         if (!athleteId) {
-          const tokens = loadTokens();
-          if (tokens?.athleteId) {
-            athleteId = tokens.athleteId;
-          } else {
-            const athlete = await client.getAthlete();
-            athleteId = athlete.id;
-          }
+          const athlete = await client.getAthlete();
+          athleteId = athlete.id;
         }
 
         const stats = await client.getAthleteStats(athleteId);
@@ -120,7 +101,7 @@ export function registerAthleteTools(server: McpServer, client: StravaClient) {
           lines.push('### Heart Rate Zones');
           lines.push(zones.heart_rate.custom_zones ? '(Custom zones)' : '(Default zones)');
           zones.heart_rate.zones.forEach((z, i) => {
-            const max = z.max === -1 ? '∞' : `${z.max}`;
+            const max = z.max === -1 ? '\u221e' : `${z.max}`;
             lines.push(`Zone ${i + 1}: ${z.min} - ${max} bpm`);
           });
           lines.push('');
@@ -129,7 +110,7 @@ export function registerAthleteTools(server: McpServer, client: StravaClient) {
         if (zones.power) {
           lines.push('### Power Zones');
           zones.power.zones.forEach((z, i) => {
-            const max = z.max === -1 ? '∞' : `${z.max}`;
+            const max = z.max === -1 ? '\u221e' : `${z.max}`;
             lines.push(`Zone ${i + 1}: ${z.min} - ${max} watts`);
           });
         }

@@ -1,18 +1,13 @@
 {
   "name": "strava-mcp",
-  "version": "1.0.0",
-  "description": "Custom Strava MCP server for Claude Code",
+  "version": "2.0.0",
+  "description": "Strava MCP server (HTTP remote connector for Claude)",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "strava-mcp": "dist/index.js"
-  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "dev:serve": "tsx src/server.ts",
-    "start": "node dist/index.js",
-    "serve": "node dist/server.js"
+    "start": "node dist/index.js"
   },
   "engines": {
     "node": ">=18.0.0"

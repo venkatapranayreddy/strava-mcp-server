@@ -18,6 +18,7 @@ interface PendingAuth {
   redirectUri: string;
   originalState?: string;
   scopes?: string[];
+  createdAt: number;
 }
 
 interface ActiveToken {
@@ -32,6 +33,7 @@ interface PendingCode {
   codeChallenge: string;
   strava: StravaTokenData;
   redirectUri: string;
+  createdAt: number;
 }
 
 // ── Clients Store ──────────────────────────────────────────────
@@ -54,14 +56,11 @@ class InMemoryClientsStore implements OAuthRegisteredClientsStore {
 export class StravaOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: OAuthRegisteredClientsStore = new InMemoryClientsStore();
 
-  // state -> pending auth flow
   private pendingAuths = new Map<string, PendingAuth>();
-  // mcpCode -> pending code exchange
   private codes = new Map<string, PendingCode>();
-  // mcpAccessToken -> active session
   private tokens = new Map<string, ActiveToken>();
-  // mcpRefreshToken -> mcpAccessToken
   private refreshTokens = new Map<string, string>();
+  private cleanupInterval?: ReturnType<typeof setInterval>;
 
   constructor(
     private stravaClientId: string,
@@ -69,10 +68,37 @@ export class StravaOAuthProvider implements OAuthServerProvider {
     private baseUrl: string,
   ) {}
 
+  // ── Cleanup ─────────────────────────────────────────────────
+
+  startCleanupInterval(): void {
+    this.cleanupInterval = setInterval(() => this.cleanup(), 10 * 60 * 1000);
+  }
+
+  stopCleanupInterval(): void {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    const tenMinAgo = now - 10 * 60 * 1000;
+
+    for (const [token, data] of this.tokens) {
+      if (data.expiresAt < now) this.tokens.delete(token);
+    }
+    for (const [rt, at] of this.refreshTokens) {
+      if (!this.tokens.has(at)) this.refreshTokens.delete(rt);
+    }
+    for (const [state, pending] of this.pendingAuths) {
+      if (pending.createdAt < tenMinAgo) this.pendingAuths.delete(state);
+    }
+    for (const [code, data] of this.codes) {
+      if (data.createdAt < tenMinAgo) this.codes.delete(code);
+    }
+  }
+
   // ── OAuthServerProvider interface ────────────────────────────
 
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
-    // Generate our own state to track this flow
     const ourState = randomBytes(16).toString('hex');
 
     this.pendingAuths.set(ourState, {
@@ -81,9 +107,9 @@ export class StravaOAuthProvider implements OAuthServerProvider {
       redirectUri: params.redirectUri,
       originalState: params.state,
       scopes: params.scopes,
+      createdAt: Date.now(),
     });
 
-    // Redirect to Strava OAuth
     const stravaAuthUrl = new URL('https://www.strava.com/oauth/authorize');
     stravaAuthUrl.searchParams.set('client_id', this.stravaClientId);
     stravaAuthUrl.searchParams.set('response_type', 'code');
@@ -97,31 +123,23 @@ export class StravaOAuthProvider implements OAuthServerProvider {
 
   async challengeForAuthorizationCode(_client: OAuthClientInformationFull, authorizationCode: string): Promise<string> {
     const codeData = this.codes.get(authorizationCode);
-    if (!codeData) {
-      throw new Error('Invalid authorization code');
-    }
+    if (!codeData) throw new Error('Invalid authorization code');
     return codeData.codeChallenge;
   }
 
   async exchangeAuthorizationCode(
     client: OAuthClientInformationFull,
     authorizationCode: string,
-    _codeVerifier?: string,
-    _redirectUri?: string,
   ): Promise<OAuthTokens> {
     const codeData = this.codes.get(authorizationCode);
-    if (!codeData) {
-      throw new Error('Invalid authorization code');
-    }
-    if (codeData.clientId !== client.client_id) {
-      throw new Error('Authorization code was not issued to this client');
-    }
+    if (!codeData) throw new Error('Invalid authorization code');
+    if (codeData.clientId !== client.client_id) throw new Error('Authorization code was not issued to this client');
 
     this.codes.delete(authorizationCode);
 
     const mcpAccessToken = randomUUID();
     const mcpRefreshToken = randomUUID();
-    const expiresIn = 3600; // 1 hour
+    const expiresIn = 3600;
 
     this.tokens.set(mcpAccessToken, {
       clientId: client.client_id,
@@ -144,29 +162,19 @@ export class StravaOAuthProvider implements OAuthServerProvider {
   async exchangeRefreshToken(
     client: OAuthClientInformationFull,
     refreshToken: string,
-    _scopes?: string[],
   ): Promise<OAuthTokens> {
     const oldAccessToken = this.refreshTokens.get(refreshToken);
-    if (!oldAccessToken) {
-      throw new Error('Invalid refresh token');
-    }
+    if (!oldAccessToken) throw new Error('Invalid refresh token');
 
     const oldData = this.tokens.get(oldAccessToken);
-    if (!oldData) {
-      throw new Error('Token data not found');
-    }
-    if (oldData.clientId !== client.client_id) {
-      throw new Error('Refresh token was not issued to this client');
-    }
+    if (!oldData) throw new Error('Token data not found');
+    if (oldData.clientId !== client.client_id) throw new Error('Refresh token was not issued to this client');
 
-    // Refresh the Strava token
     const freshStrava = await this.refreshStravaToken(oldData.strava);
 
-    // Remove old tokens
     this.tokens.delete(oldAccessToken);
     this.refreshTokens.delete(refreshToken);
 
-    // Issue new MCP tokens
     const newAccessToken = randomUUID();
     const newRefreshToken = randomUUID();
     const expiresIn = 3600;
@@ -191,12 +199,8 @@ export class StravaOAuthProvider implements OAuthServerProvider {
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const data = this.tokens.get(token);
-    if (!data) {
-      throw new Error('Invalid access token');
-    }
-    if (data.expiresAt < Date.now()) {
-      throw new Error('Access token expired');
-    }
+    if (!data) throw new Error('Invalid access token');
+    if (data.expiresAt < Date.now()) throw new Error('Access token expired');
     return {
       token,
       clientId: data.clientId,
@@ -217,28 +221,24 @@ export class StravaOAuthProvider implements OAuthServerProvider {
     }
   }
 
-  // ── Strava callback handler (called from Express route) ──────
+  // ── Strava callback handler ──────────────────────────────────
 
   async handleStravaCallback(code: string, state: string): Promise<{ redirectUri: string }> {
     const pending = this.pendingAuths.get(state);
-    if (!pending) {
-      throw new Error('Invalid or expired OAuth state');
-    }
+    if (!pending) throw new Error('Invalid or expired OAuth state');
     this.pendingAuths.delete(state);
 
-    // Exchange Strava auth code for Strava tokens
     const stravaTokens = await this.exchangeStravaCode(code);
 
-    // Generate MCP authorization code
     const mcpCode = randomUUID();
     this.codes.set(mcpCode, {
       clientId: pending.clientId,
       codeChallenge: pending.codeChallenge,
       strava: stravaTokens,
       redirectUri: pending.redirectUri,
+      createdAt: Date.now(),
     });
 
-    // Build redirect back to Claude.ai
     const redirectUrl = new URL(pending.redirectUri);
     redirectUrl.searchParams.set('code', mcpCode);
     if (pending.originalState) {
@@ -252,11 +252,8 @@ export class StravaOAuthProvider implements OAuthServerProvider {
 
   async getStravaAccessToken(mcpToken: string): Promise<string> {
     const data = this.tokens.get(mcpToken);
-    if (!data) {
-      throw new Error('Invalid MCP token');
-    }
+    if (!data) throw new Error('Invalid MCP token');
 
-    // Check if Strava token needs refresh (5-minute buffer)
     if (Date.now() / 1000 >= data.strava.expiresAt - 300) {
       const fresh = await this.refreshStravaToken(data.strava);
       data.strava = fresh;
@@ -281,7 +278,8 @@ export class StravaOAuthProvider implements OAuthServerProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Strava token exchange failed (${response.status}): ${body}`);
+      console.error(`Strava token exchange failed (${response.status}): ${body}`);
+      throw new Error('Strava token exchange failed');
     }
 
     const data = await response.json() as {
@@ -313,7 +311,8 @@ export class StravaOAuthProvider implements OAuthServerProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Strava token refresh failed (${response.status}): ${body}`);
+      console.error(`Strava token refresh failed (${response.status}): ${body}`);
+      throw new Error('Strava token refresh failed');
     }
 
     const data = await response.json() as {

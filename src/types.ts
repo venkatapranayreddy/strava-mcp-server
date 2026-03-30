@@ -213,15 +213,3 @@ export interface StravaRoute {
     summary_polyline: string | null;
   };
 }
-
-export interface StravaConfig {
-  clientId: string;
-  clientSecret: string;
-}
-
-export interface StravaTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
-  athleteId?: number;
-}
