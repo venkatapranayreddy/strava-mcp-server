@@ -10,9 +10,11 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadConfig } from './config.js';
 import { StravaOAuthProvider } from './oauth-provider.js';
 import { StravaClient } from './strava-client.js';
-import { registerAllTools } from './tools/index.js';
+import { registerAllTools } from './tools.js';
 
 import type { Request, Response } from 'express';
+
+const VERSION = '2.0.0';
 
 // ── Configuration ──────────────────────────────────────────────
 
@@ -27,6 +29,7 @@ provider.startCleanupInterval();
 // ── Express App ────────────────────────────────────────────────
 
 const app = createMcpExpressApp({ host: '0.0.0.0' });
+app.set('trust proxy', 1);
 
 // Mount OAuth endpoints: /authorize, /token, /register, /revoke, /.well-known/*
 const issuerUrl = new URL(baseUrl);
@@ -113,7 +116,7 @@ app.post('/mcp', authMiddleware, async (req: Request, res: Response) => {
         return provider.getStravaAccessToken(mcpToken);
       };
 
-      const server = new McpServer({ name: 'strava-mcp', version: '2.0.0' });
+      const server = new McpServer({ name: 'strava-mcp', version: VERSION });
       const client = new StravaClient(getAccessToken);
       registerAllTools(server, client);
 
@@ -170,7 +173,7 @@ app.delete('/mcp', authMiddleware, async (req: Request, res: Response) => {
 // ── Health check ───────────────────────────────────────────────
 
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', server: 'strava-mcp', version: '2.0.0' });
+  res.json({ status: 'ok', server: 'strava-mcp', version: VERSION });
 });
 
 // ── Start ──────────────────────────────────────────────────────

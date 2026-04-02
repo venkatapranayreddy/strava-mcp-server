@@ -12,8 +12,17 @@ import type {
 
 export class StravaClient {
   private baseUrl = 'https://www.strava.com/api/v3';
+  private cachedAthleteId?: number;
 
   constructor(private getAccessToken: () => Promise<string>) {}
+
+  async getAthleteId(): Promise<number> {
+    if (!this.cachedAthleteId) {
+      const athlete = await this.getAthlete();
+      this.cachedAthleteId = athlete.id;
+    }
+    return this.cachedAthleteId;
+  }
 
   private async request<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
     const token = await this.getAccessToken();
