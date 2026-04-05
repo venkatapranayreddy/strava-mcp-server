@@ -72,6 +72,25 @@ const authMiddleware = requireBearerAuth({ verifier: provider, requiredScopes: [
 
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 const sessionAuthTokens: Record<string, string> = {};
+const sessionLastActivity: Record<string, number> = {};
+
+const SESSION_IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+setInterval(() => {
+  const now = Date.now();
+  for (const sid in sessionLastActivity) {
+    if (now - sessionLastActivity[sid] > SESSION_IDLE_TIMEOUT) {
+      console.log(`Cleaning up idle session ${sid}`);
+      const transport = transports[sid];
+      if (transport) {
+        transport.close().catch(() => {});
+      }
+      delete transports[sid];
+      delete sessionAuthTokens[sid];
+      delete sessionLastActivity[sid];
+    }
+  }
+}, 10 * 60 * 1000); // Run every 10 minutes
 
 // ── Request Logging ────────────────────────────────────────────
 
@@ -92,12 +111,16 @@ app.post('/mcp', authMiddleware, async (req: Request, res: Response) => {
 
     if (sessionId && transports[sessionId]) {
       transport = transports[sessionId];
+      // Update auth token mapping — client may have refreshed since session was created
+      if (authToken) sessionAuthTokens[sessionId] = authToken;
+      sessionLastActivity[sessionId] = Date.now();
     } else if (!sessionId && isInitializeRequest(req.body)) {
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid: string) => {
           transports[sid] = transport;
           if (authToken) sessionAuthTokens[sid] = authToken;
+          sessionLastActivity[sid] = Date.now();
         },
       });
 
@@ -106,6 +129,7 @@ app.post('/mcp', authMiddleware, async (req: Request, res: Response) => {
         if (sid) {
           delete transports[sid];
           delete sessionAuthTokens[sid];
+          delete sessionLastActivity[sid];
         }
       };
 
@@ -195,6 +219,7 @@ async function shutdown(signal: string): Promise<void> {
       await transports[sid].close();
       delete transports[sid];
       delete sessionAuthTokens[sid];
+      delete sessionLastActivity[sid];
     } catch (error) {
       console.error(`Error closing session ${sid}:`, error);
     }

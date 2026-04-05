@@ -257,6 +257,8 @@ export class StravaOAuthProvider implements OAuthServerProvider {
     if (Date.now() / 1000 >= data.strava.expiresAt - 300) {
       const fresh = await this.refreshStravaToken(data.strava);
       data.strava = fresh;
+      // Extend MCP token expiry so cleanup doesn't delete it while session is active
+      data.expiresAt = Date.now() + 3600 * 1000;
     }
 
     return data.strava.accessToken;

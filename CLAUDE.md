@@ -43,13 +43,12 @@ Each MCP client session gets its own `StreamableHTTPServerTransport`, `McpServer
 - `types.ts` — TypeScript interfaces for all Strava API response shapes.
 - `oauth-provider.ts` — `StravaOAuthProvider` implementing MCP SDK's `OAuthServerProvider`. All state (tokens, pending auths, codes) in-memory Maps with periodic cleanup (10 min interval).
 - `strava-client.ts` — Thin HTTP client over Strava API v3. Transport-agnostic via `getAccessToken` function injection. Handles rate limiting (429s) with retry-after messaging.
-- `tools/` — MCP tools grouped by domain (`athlete.ts`, `activity.ts`, `segment.ts`, `route.ts`). `tools/index.ts` registers all via `registerAllTools()`. `tools/format.ts` has shared formatters for duration/distance/pace.
+- `tools.ts` — All MCP tool definitions in a single file. `registerAllTools()` registers every tool on the server.
 
 ### Adding a New Tool
-1. Create or extend a file in `tools/` following the existing pattern (Zod schema for params, handler returns `{ content: [{ type: 'text', text }] }`).
+1. Add a new `server.tool()` call inside `registerAllTools()` in `tools.ts` (Zod schema for params, handler returns `{ content: [{ type: 'text', text }] }`).
 2. Add the corresponding method to `StravaClient` if it needs a new Strava API call.
 3. Add the type interfaces to `types.ts`.
-4. Wire it up in `tools/index.ts` via the domain's register function.
 
 ### MCP Tools
 `get_athlete`, `get_athlete_stats`, `get_athlete_zones`, `list_activities`, `get_activity`, `get_activity_streams`, `get_activity_laps`, `get_segment`, `list_starred_segments`, `list_routes`, `export_route_gpx`
@@ -58,6 +57,6 @@ Each MCP client session gets its own `StreamableHTTPServerTransport`, `McpServer
 
 - ESM throughout (`"type": "module"`). All local imports use `.js` extension.
 - Zod schemas for MCP tool parameter validation.
-- Tool handlers return `{ content: [{ type: 'text', text }] }` with formatted markdown tables.
+- Tool handlers return `{ content: [{ type: 'text', text }] }` with pretty-printed JSON (`JSON.stringify(data, null, 2)`).
 - Token refresh uses a 5-minute buffer before actual expiry.
 - Errors are logged to stderr with full details, but sanitized messages are returned to clients.
